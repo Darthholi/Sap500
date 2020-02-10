@@ -1,0 +1,8 @@
+*.idea
+__pycache__
+*.lyx#
+*.lyx~
+legacymodels/
+rednews/
+glovepretrained/
+glove.6B.zip
