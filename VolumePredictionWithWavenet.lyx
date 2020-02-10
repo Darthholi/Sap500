@@ -1,0 +1,1781 @@
+#LyX 2.2 created this file. For more info see http://www.lyx.org/
+\lyxformat 508
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass article
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\biblio_style plain
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\quotes_language english
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Title
+S&P 500 volume prediction with Wavenet
+\begin_inset Newline newline
+\end_inset
+
+A technical report 
+\begin_inset CommandInset href
+LatexCommand href
+name "for a github project"
+target "https://github.com/Darthholi/Sap500"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+This document covers the first steps of experimenting with S&P 500 stock
+ volume prediction.
+ The aim is to beat the baseline of 'tomorow is gonna be the same' (which
+ seemingly cannot be beaten with a simple models on a first try 
+\begin_inset CommandInset href
+LatexCommand href
+name "like documented here"
+target "http://investingdeeply.com/blog/predicting-stock-market-keras-tensorflow/"
+
+\end_inset
+
+), and analyzing the found model.
+ References to other works are used mostly for inspiration (and are either
+ generally not recommended to follow or only talk about failed attempts
+ like 
+\begin_inset CommandInset href
+LatexCommand href
+name "here"
+target "https://towardsdatascience.com/what-happened-when-i-tried-market-prediction-with-machine-learning-4108610b3422"
+
+\end_inset
+
+ and 
+\begin_inset CommandInset href
+LatexCommand href
+name "here"
+target "https://news.ycombinator.com/item?id=20720095"
+
+\end_inset
+
+).
+\end_layout
+
+\begin_layout Standard
+For reproducing this experiment and analysis, see 
+\begin_inset CommandInset href
+LatexCommand href
+name "readme"
+target "https://github.com/Darthholi/Sap500/blob/master/README.md"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Section
+Initial data exploration
+\end_layout
+
+\begin_layout Standard
+We will work with daily data composed of trading days in the interval '1999-01-0
+1' to '2018-12-31'.
+ The training set will start with '2000-01-03' (data prior to that date
+ are used only as historical reference), validation starts with the date
+ '2017-01-03'.
+ The date is actually the first day in the year in data - we can observe,
+ that the timeline does not contain all days - presumably only workdays,
+ when the stock exchange is open.
+\end_layout
+
+\begin_layout Standard
+Final testing of the found model should be done on a testing set, we do
+ not cover that here, since this technical report aims to just demonstrate
+ the methods and techniques to beat the baseline on a validation set.
+\end_layout
+
+\begin_layout Standard
+The goal is to predict the S&P Volume.
+ The first step is normalising the data - since just min-max normalisation
+ (see 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:S&P-500-normalized"
+
+\end_inset
+
+ below) oscilates around a moving mean value over the time, we will be predictin
+g the change to the next day (
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:S&P-500-differences"
+
+\end_inset
+
+):
+\begin_inset Float figure
+placement H
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename Volume.png
+	width 100text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:S&P-500-normalized"
+
+\end_inset
+
+S&P 500 normalized volume over time.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\begin_inset Float figure
+placement H
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename Volumediffs.png
+	width 100text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:S&P-500-differences"
+
+\end_inset
+
+S&P 500 differences in volume to the next day.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+(We could predict normalised change and not change of normalised value also).
+ The changes have the following distribution (
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:The-distribution-of"
+
+\end_inset
+
+) with most values centered around zero (only 700 datapoints are further
+ away than one standard deviation):
+\begin_inset Float figure
+placement H
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename Volumediffshist.png
+	width 70text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:The-distribution-of"
+
+\end_inset
+
+The distribution of volume differences
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Lets find the correlations in the data itself - what could a linear model
+ tell us when trying to predict next day from the past data? When we plot
+ the correlations with itself, but shifted, we get this graph (
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Graph-of-correlations"
+
+\end_inset
+
+) :
+\begin_inset Float figure
+placement H
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename correlations.png
+	width 100text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Graph-of-correlations"
+
+\end_inset
+
+Graph of correlations of past days differences with the current
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We find big peaks with correlations one day ago and (multiples of) 251 days
+ before, which correspond to a situation of one calendar year before.
+ See 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Scatter-plot-of"
+
+\end_inset
+
+:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement h
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename daybefore.png
+	width 40text%
+
+\end_inset
+
+
+\begin_inset Graphics
+	filename yearbefore.png
+	width 40text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Scatter-plot-of"
+
+\end_inset
+
+Scatter plot of differences, differences with one day shift and one year
+ shift.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Fouriers transformation also shows (
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:The-fourier-transformed-differen"
+
+\end_inset
+
+) that there are peaks in the frequency domain that could be used for prediction
+s in standard approaches (as in 
+\begin_inset CommandInset href
+LatexCommand href
+name "Stock predictions using fourier transforms"
+target "http://datascience.uconn.edu/index.php/deepandbig/item/131-stock-market-predictions-using-fourier-transforms-in-python"
+
+\end_inset
+
+ 
+\begin_inset CommandInset href
+LatexCommand href
+name "Github notebook"
+target "https://github.com/snazrul1/PyRevolution/blob/master/Puzzles/DSP_For_Stock_Prices.ipynb"
+
+\end_inset
+
+).
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement h
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename freq.png
+	width 90text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:The-fourier-transformed-differen"
+
+\end_inset
+
+The fourier-transformed differences.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+For convenience, the data exploration could be easily replicated using 
+\begin_inset CommandInset href
+LatexCommand href
+name "this google colab notebook"
+target "https://colab.research.google.com/drive/1yuOsEa0zRQkE4p-qIeYYWsm7Ov8yBmH9"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsection
+Data sources used
+\end_layout
+
+\begin_layout Standard
+Note, that when it comes to data sources for a machine learning model, we
+ generally think, that we are limited only by the computing power and that
+ the model si able to use all the features inthe right way.
+ As a rule of thumb at a first glance it is true, nevertheless, there are
+ methods that do 
+\begin_inset CommandInset href
+LatexCommand href
+name "feature selection"
+target "https://academic.oup.com/bioinformatics/advance-article/doi/10.1093/bioinformatics/btz763/5583689"
+
+\end_inset
+
+ to improve the prediction quality.
+ A neural network is only an optimization algorithm walking through the
+ multidimensional landscape, so any insight we could bring does count.
+\end_layout
+
+\begin_layout Standard
+These datasources are used as an example, since we did no feature selection:
+\end_layout
+
+\begin_layout Itemize
+First 3 pages of the most popular daily data on 
+\begin_inset CommandInset href
+LatexCommand href
+name "FRED database"
+target "https://fred.stlouisfed.org/tags/series?et=&pageID=1&t=daily"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+Yahoo daily tickers: '^DJI', '^IXIC', '^RUT', '^GSPC' (min-max normalized).
+\end_layout
+
+\begin_layout Itemize
+Policy uncertainity daily data from the 
+\begin_inset CommandInset href
+LatexCommand href
+name "US"
+target "https://www.policyuncertainty.com/us_monthly.html"
+
+\end_inset
+
+ and 
+\begin_inset CommandInset href
+LatexCommand href
+name "UK"
+target "https://www.policyuncertainty.com/uk_monthly.html"
+
+\end_inset
+
+ (min-max normalized).
+\end_layout
+
+\begin_layout Itemize
+Reddit 
+\begin_inset CommandInset href
+LatexCommand href
+name "worldnews channel"
+target "https://www.reddit.com/r/worldnews/"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_deeper
+\begin_layout Standard
+We took 25 most upvoted entries from each day, excluding most non-english
+ entries and embedded them using GLOVE embeddings (
+\begin_inset CommandInset href
+LatexCommand href
+name "glove.6B.50d.txt"
+target "http://nlp.stanford.edu/data/glove.6B.zip"
+
+\end_inset
+
+).
+ The pre-processing and downloading codes are available at 
+\begin_inset CommandInset href
+LatexCommand href
+name "github"
+target "https://github.com/Darthholi/rednews"
+
+\end_inset
+
+.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+The actual date information with separated day of week, month and day in
+ month.
+ All embedded using positional embedding from 
+\begin_inset CommandInset href
+LatexCommand href
+name "attention is all you need"
+target "https://arxiv.org/abs/1706.03762"
+
+\end_inset
+
+, using sin, cos and linear functions, each embedded into 4 dimensions.
+ Additionally the dayofweek and month are encoded using one-hot encoding.
+\end_layout
+
+\begin_layout Standard
+Just to be sure, for FRED database we have checked the timeseries dates
+ are indeed in the same format as Yahoo provides (FRED provides also S&P
+ 500).
+\begin_inset Note Note
+status open
+
+\begin_layout Plain Layout
+, for others it formally remains asking the provider to verify the assumption
+ (as it is not stated anywhere and no similar verification was possible).
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph*
+Missing values?
+\end_layout
+
+\begin_layout Standard
+Because the stocks trading days do not fully cover the datasources availability,
+ a pre-processing is employed to gain the most from the existing information.
+ When there is a gap present between the last trading day and the next one,
+ the datasources could offer more daily data (based on calendar days).
+ In that case we take minimal and maximal value from the data corresponding
+ to all days in the gap (and the current day) of each non-reddit datasource.
+\end_layout
+
+\begin_layout Standard
+For reddit news we take the most upvoted news from all the days in the gap.
+\end_layout
+
+\begin_layout Standard
+Note, that when there is no gap present, we just copy the available data
+ twice (as a minimum and maximum of 1 length sequence) to hold the format
+ of 2 columns per feature per trading day the same.
+\end_layout
+
+\begin_layout Section
+The modelling setting
+\end_layout
+
+\begin_layout Standard
+As stated before, we have normalized the data and aim predicting a relative
+ change of the volume to the next day.
+\end_layout
+
+\begin_layout Standard
+Note that the baseline of 'tomorow the stock's data are gonna stay the same'
+ then becomes a constant zero prediction with a SSE score of 
+\begin_inset Formula $1.483$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+We will use mean squared error as the model's loss function - since we do
+ not change the timeseries lengths, it is equivalent (up to a scaling constant)
+ to summed square error for gradient propagation.
+\end_layout
+
+\begin_layout Standard
+Usually when dealing with large timeseries data, the data could be split
+ into more (overlapping) windows by various strategies, but in our case
+ we can fit everything into the memory at once, tensorflow will take care
+ of proper gradient propagation.
+\end_layout
+
+\begin_layout Standard
+As said, the data can be concatenated in the features axis (the last one)
+ and fed into the network in one batch of size one.
+ Therefore the dataformat is
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $[1,\text{timeseries length},\text{features length}]$
+\end_inset
+
+ for sources and 
+\begin_inset Formula $[1,\text{timeseries length},1]$
+\end_inset
+
+ for target value.
+\end_layout
+
+\begin_layout Standard
+The only exception is the embedded worldnews channel, which is fed in the
+ format of: 
+\end_layout
+
+\begin_layout Itemize
+[batch, timeseries length, stories ordered, words per story, embedding size]
+\begin_inset Formula $=[1,25,20,50]$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+In the worldnews channel branch of the input, we use:
+\end_layout
+
+\begin_layout Itemize
+Two stacked convolutions over the 'words per story' dimension with 50 neurons
+ (both with kernel size of 5 and second with dilation rate 2)
+\end_layout
+
+\begin_layout Itemize
+A maxpooling and mean over the features
+\end_layout
+
+\begin_layout Itemize
+Another convolution layer with 50 neurons and kernel size 5 (now over 'stories
+ ordered' dimension)
+\end_layout
+
+\begin_layout Itemize
+Followed with maxpooling and mean 
+\end_layout
+
+\begin_layout Itemize
+One 15% dropout
+\end_layout
+
+\begin_layout Standard
+The resulting 3 dimensional tensor is then concatenated to other datasources.
+\end_layout
+
+\begin_layout Standard
+All input data are (at the models beginning) also additionaly shifted and
+ concatenated in the feature dimension to include 1 and 2 years older data
+ and 1,2 and 3 weeks older data directly with contrast to current day data.
+\end_layout
+
+\begin_layout Standard
+To faciliate the said shifts the model is present with older data from 1999-01-0
+1 for training, whereas validation data can see all the training data.
+\end_layout
+
+\begin_layout Standard
+Since we do not change the sequence length, training and validation loss
+ is calculated using mean squared error, which is the same up to a constant
+ to desired summed square error.
+ Keras averaging over batches has no influence here, because we have one
+ batch of size 1.
+\end_layout
+
+\begin_layout Standard
+The losses are weighted by zeroes on out-of-set data (the data present only
+ as a historical reference).
+ 
+\end_layout
+
+\begin_layout Standard
+Since we want to use multiple datasources, we will not be using techniques
+ predicting further ahead which are based on already predicted values (
+\begin_inset CommandInset href
+LatexCommand href
+name "like here"
+target "https://sflscientific.com/data-science-blog/2017/2/10/predicting-stock-volume-with-lstm"
+
+\end_inset
+
+).
+\end_layout
+
+\begin_layout Subsection
+Prior experiments and insights into the modelling:
+\end_layout
+
+\begin_layout Standard
+With all previously stated held fixed, we can vary architectures of the
+ neural network.
+ Some experiments with simpler architectures were conducted before wavenet
+ to gather some insights (or to verify what the theories and common knowhow
+ advises us):
+\end_layout
+
+\begin_layout Itemize
+In the experiments there was a very strong local minimum, in a numerical
+ or experimental sense, of constant zero being the baseline which we wanted
+ to beat.
+ Many experiments converged to that state.
+\end_layout
+
+\begin_layout Itemize
+When 'traditional' set of activation functions is used (relu, tanh, sigmoidal),
+ the network falls to the constant zero minima, presumably by the combination
+ of trainable bias and the activation function's limits.
+\end_layout
+
+\begin_layout Itemize
+On the other side, linear activation function tends to overfit the data.
+\end_layout
+
+\begin_deeper
+\begin_layout Standard
+The issue can be solved by a strong regularizing dropout (45% in our case)
+ that forces the predictors to oppose and support each other in the resulting
+ sum and act as an ensemble.
+ The effect can be succesfully seen on the learning curves (like at figure
+ 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "fig:The-losses"
+
+\end_inset
+
+), where the error is lower on validation set (where the dropout is turned
+ off).
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Simple LSTM architectures, when presented with enough inputs, do avoid the
+ 0-prediction trap and visually capture the changing trend of the data,
+ but does not get over the baseline.
+\end_layout
+
+\begin_layout Itemize
+Interestingly when the problem is formulated only as a sign prediction ('does
+ the volume go up or down?'), we achieve 55% accuracy with LSTM, which is
+ a tiny bit higher than the 
+\begin_inset CommandInset href
+LatexCommand href
+name "existing result"
+target "https://hackernoon.com/i-spent-20-minutes-trying-to-predict-the-stock-market-with-ai-these-are-my-results-59d48c7a388a"
+
+\end_inset
+
+.
+ Unfortunately it cannot be calibrated to beat the baseline in the terms
+ of squared error (because the errors are significant in areas with higher
+ peaks).
+ 
+\begin_inset CommandInset href
+LatexCommand href
+name "Some sources"
+target "https://towardsdatascience.com/the-fall-of-rnn-lstm-2d1594c74ce0"
+
+\end_inset
+
+ would suggest to use attention instead in this case.
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+By calibration we mean selecting separately the mean of positive and negative
+ values.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Simple Convolution architectures (even with acces to historical data), when
+ not falling into the local minima, oscilated around a different mean than
+ zero and thus also failed.
+\end_layout
+
+\begin_layout Standard
+The next step was to apply a more complex architecture, specifically 
+\begin_inset CommandInset href
+LatexCommand href
+name "wavenet"
+target "https://arxiv.org/abs/1609.03499"
+
+\end_inset
+
+, known to produce good results in its original area of sound signal processing.
+\end_layout
+
+\begin_layout Section
+Wavenet
+\end_layout
+
+\begin_layout Standard
+We have used 
+\begin_inset CommandInset href
+LatexCommand href
+name "Wavenet's architecture"
+target "https://medium.com/@satyam.kumar.iiitv/understanding-wavenet-architecture-361cc4c2d623"
+
+\end_inset
+
+ with 20 blocks with additional modifications, based on the observed prior
+ behavior and gathered knowledge:
+\end_layout
+
+\begin_layout Itemize
+replaced 'relu' wavenet's activations with 'LeakyReLU' to avoid the zero
+ prediction minima (this activation allows for a small slope instead of
+ zero)
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+LeakyReLU is used also for the convolutions in the reddit worldnews input
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+replaced the final layers with 400 neurons dense layer, 45% dropout and
+ final linear regression.
+\end_layout
+
+\begin_layout Itemize
+In total the whole model has 11,334,756 weights.
+\end_layout
+
+\begin_layout Standard
+From some experimental runs and their graphs, we can see that the network
+ either:
+\end_layout
+
+\begin_layout Itemize
+approximates the area on the end of the validation timeline
+\end_layout
+
+\begin_layout Itemize
+predicts a recurring trend
+\end_layout
+
+\begin_layout Itemize
+predicts a nonrecurring trend (but the model is not stable)
+\end_layout
+
+\begin_layout Itemize
+or preferres to predict some big drops
+\end_layout
+
+\begin_layout Standard
+Generally the results vary each run, which is an example of behavior we
+ can get when there are big differences in the dimensionality of the timesteps,
+ weights and features.
+ It can give us a nice hint for opportunity for ensmbling later or for the
+ use of scheduled learning rate.
+\end_layout
+
+\begin_layout Standard
+The best, in terms of SSE, was a model exhibiting the last charasteristics,
+ as we can see from figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "fig:Model-prediction-vs"
+
+\end_inset
+
+.
+ It did beat the baseline's score 
+\begin_inset Formula $1.483$
+\end_inset
+
+ with SSE of 
+\begin_inset Formula $1.4167$
+\end_inset
+
+ therefore we will focus on its analysis and verify the above claim (the
+ claims about the other models can be verified by similar procedure).
+\end_layout
+
+\begin_layout Paragraph
+wavenet14167
+\end_layout
+
+\begin_layout Standard
+When we look at the predictions only in terms of binary classification (higher
+ / lower), we find out, that not only the model achieves accuracy of 
+\begin_inset Formula $65.8\%$
+\end_inset
+
+ just by capturing one periodic trend in the data.
+\end_layout
+
+\begin_layout Standard
+Scatterplot of ground truth-prediction (figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "fig:Scatterplot-of-ground"
+
+\end_inset
+
+) confirms the model predictions are correlated with the ground truth, but
+ have a shorter range in absolute values.
+\end_layout
+
+\begin_layout Standard
+When we linearly regress the squared error the model makes (figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "fig:Errors-that-the"
+
+\end_inset
+
+), we find out the linear coefficient (7.11e-06) is lower than the regressed
+ error for the baseline (7.03e-06).
+ Following the linear trend we would expect the market to oscilate more
+ in the future and this model to continue capturing the recurring trend.
+\end_layout
+
+\begin_layout Standard
+To see how the model got to these results, we can look at the performance
+ on the training set on figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "fig:Model-predictions-train"
+
+\end_inset
+
+.
+ There it behaved similarily, also beat the baseline in terms of sse and
+ direstion too.
+ 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Wrap figure
+lines 0
+placement o
+overhang 0in
+width "40col%"
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_losses.png
+	width 40text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:The-losses"
+
+\end_inset
+
+The graph of the loss during training
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement H
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_pred_truth.png
+	lyxscale 50
+	width 80text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Model-prediction-vs"
+
+\end_inset
+
+Model prediction vs ground truth on validation set (zoom on predictions
+ available in the repository).
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement H
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_corr_pred_truth.png
+	lyxscale 20
+	width 80text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Scatterplot-of-ground"
+
+\end_inset
+
+Scatterplot of ground truth-prediction shows the predicted spikes.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement H
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_errors.png
+	lyxscale 40
+	width 50text%
+
+\end_inset
+
+
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_errors_diff.png
+	lyxscale 40
+	width 50text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Errors-that-the"
+
+\end_inset
+
+Errors that the baseline and model make, together with their difference
+ (where positive values mean that our model did beat the baseline)
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement H
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_train_pred_truth.png
+	lyxscale 50
+	width 80text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Model-predictions-train"
+
+\end_inset
+
+Model predictions on training data (zoom on predictions available in the
+ repository)
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Model analysis
+\end_layout
+
+\begin_layout Standard
+Apart from what we saw in the predictions, we will inspect the model's robustnes
+s, flexibility and behavior with extremal values to a specific level of
+ detail.
+\end_layout
+
+\begin_layout Standard
+We should take a note to also inspect two observed phenomena, that are not
+ done in this report:
+\end_layout
+
+\begin_layout Itemize
+What is causing the model to catch the specific frequency observed (by trying
+ to influence just that prediction by modifying the source data, for example
+ by removing that frequency, while holding the model fixed)
+\end_layout
+
+\begin_layout Itemize
+An interesting observation is that the model's error also oscilates.
+ Another analysis could be employed to analyse if the data has some periodic
+ components.
+\end_layout
+
+\begin_layout Standard
+Usually there are two methods, that evaluate how a model is tied to its
+ input:
+\end_layout
+
+\begin_layout Itemize
+observing the model's prediction based on changed / corrupted inputs.
+\end_layout
+
+\begin_deeper
+\begin_layout Standard
+A robust model should not react to random non-systematic noise.
+ Ideally we would hope that it would be self-correcting in the manner, that
+ when other data sources are not corrupt, it could ignore the noise.
+ (In a practical setting we could imagine having another model trained that
+ would detect anomalies like that to raise a flag for us.)
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+computing the derivatives of the input data with respect to the predictions
+ or loss.
+\end_layout
+
+\begin_deeper
+\begin_layout Standard
+We can discover more important inputs having higher absolute value of the
+ gradient.
+\end_layout
+
+\end_deeper
+\begin_layout Standard
+Some works suggest, that both methods are not precise when duplicite or
+ somehow corellated inputs are present, but nevertheless they will give
+ us some insights.
+\end_layout
+
+\begin_layout Standard
+There are, of course, other methods that allow us to inspect 
+\begin_inset CommandInset href
+LatexCommand href
+name "robustness"
+target "https://obastani.github.io/docs/dars18.pdf"
+
+\end_inset
+
+ 
+\begin_inset CommandInset href
+LatexCommand href
+name "(also here)"
+target "https://openreview.net/pdf?id=BkUHlMZ0b"
+
+\end_inset
+
+, also more sources on 
+\begin_inset CommandInset href
+LatexCommand href
+name "interpretability"
+target "https://towardsdatascience.com/interpreting-machine-learning-models-c7646393c270"
+
+\end_inset
+
+ exist.
+\end_layout
+
+\begin_layout Paragraph
+Data corruption
+\end_layout
+
+\begin_layout Standard
+We can evaluate (in terms of SSE) the trained model on data corrupted in
+ many different ways.
+ For our analysis we will look at 3 possibilities:
+\end_layout
+
+\begin_layout Itemize
+Setting a random share of all the input data (with fixed percentage) to
+ zero
+\end_layout
+
+\begin_layout Itemize
+Setting to a plus/minus higher value
+\end_layout
+
+\begin_layout Itemize
+Or to a maximal/minimal value.
+ Since our data are normalised to 0.0-1.0, the negative values also test the
+ model on completely errorneous datapoints.
+\end_layout
+
+\begin_layout Standard
+The plots (figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "fig:Three-modes-of"
+
+\end_inset
+
+) show three trials for each integer percentage from zero to 
+\begin_inset Formula $100\,\%$
+\end_inset
+
+ (just to see the overall shape).
+ 
+\end_layout
+
+\begin_layout Standard
+As we can see from the plots, the highest effect of distortion is achieved
+ using the maximal values and 
+\begin_inset Formula $\pm0.5$
+\end_inset
+
+ methods, where the results are significantly different from the original
+ model's at the level of 
+\begin_inset Formula $6\,\%$
+\end_inset
+
+ of random data distortion (and exhibit the biggest change in SSE when we
+ change all the inputs).
+\end_layout
+
+\begin_layout Standard
+Significant difference condition is decided to be a case when all the trials
+ performance drops by more than 
+\begin_inset Formula $5\,\%$
+\end_inset
+
+ of the difference between baseline SSE and the model's SSE.
+ The criterium is chosen to illustrate the process and could be modified
+ based on the application.
+\end_layout
+
+\begin_layout Standard
+Possibly thanks to the dropout regularization, our model is more resilient
+ to random zero inputs in the source (or markets) data, but sensitive to
+ spikes in the data.
+ Therefore if the inputs begin to differ unusually in magnitudes (while
+ keeping only the volume distribution somehow same) we should not use this
+ model, but retrain, even though we have the 
+\begin_inset Formula $6\,\%$
+\end_inset
+
+ reserve.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_corrupt_0.png
+	lyxscale 30
+	width 30text%
+
+\end_inset
+
+
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_corrupt_high.png
+	lyxscale 30
+	width 30text%
+
+\end_inset
+
+
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_corrupt_max.png
+	lyxscale 30
+	width 30text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Three-modes-of"
+
+\end_inset
+
+Three modes of data corruption (zeroes, around 
+\begin_inset Formula $\pm0.5$
+\end_inset
+
+, 
+\begin_inset Formula $\pm1.0$
+\end_inset
+
+) plotted against the set percentage to corrupt.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Since we have groupped inputs by a datasource, we can investigate the importance
+ of the inputs again using this method of data corruption applied only on
+ some inputs.
+\end_layout
+
+\begin_layout Itemize
+The most important input was discovered (as seen in figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "fig:Inputs-importance-by"
+
+\end_inset
+
+) to be was from policy uncertainty markers and FRED, as we would suspect
+ the market depend on the political influences.
+\end_layout
+
+\begin_layout Itemize
+Second most important input was the input calendar date embedded using positiona
+l embeddings, which hints at stronger dependency on seasonality and/or holidays.
+\end_layout
+
+\begin_layout Standard
+Detailed analysis have uncovered this model depends heavily on specific
+ FRED 
+\begin_inset CommandInset href
+LatexCommand href
+name "AAA10Y"
+target "https://fred.stlouisfed.org/series/AAA10Y"
+
+\end_inset
+
+ marker, which, if set to zero, would send immediately the prediction over
+ the baseline's score and make the model mostly predict positive values.
+ Whereas the other markers had zero impact on the prediction alone.
+ That does not have to mean they are not important or not used, but that
+ they might be:
+\end_layout
+
+\begin_layout Itemize
+duplicit with other data
+\end_layout
+
+\begin_layout Itemize
+less important alone as the dropout mechanism supresses the inidividual
+ importance
+\end_layout
+
+\begin_layout Itemize
+helping only the gradient descend during training to reach this optimum
+\end_layout
+
+\begin_layout Standard
+This hypothesis can also be verified by training the model with the AAA10Y
+ marker alone (not done here).
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_corrupt_maxinp_dates.png
+	lyxscale 30
+	width 50text%
+
+\end_inset
+
+
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5_corrupt_maxinp_markers.png
+	lyxscale 30
+	width 50text%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Inputs-importance-by"
+
+\end_inset
+
+Inputs importance by drop in SSE.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph*
+Second method - gradients with respect to inputs
+\end_layout
+
+\begin_layout Standard
+By looking at the gradients of the validation's set model's SSE with respect
+ to the inputs and then summing or maxing them out by features or time dimension
+, we can asses the inputs importance by a different way.
+\end_layout
+
+\begin_layout Standard
+It allows us to see which dates contributed the most to the final SSE, as
+ in figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "fig:The-models-sensitivity"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+Moreover we could also do this timestep importance analysis per each single
+ day's prediction (and not only the loss) and max/sum it up.
+ We would get a graph of relative importances to tomorow's prediction.
+\end_layout
+
+\begin_layout Standard
+Reducing the gradients along the time dimension shows the model is in fact
+ sensitive to all the input markers.
+ The contrast with the previous method means, it was not able to evaluate
+ it individually or that the model would be sensitive only to smaller changes
+ (as derivatives approximate only the neighbourhood).
+ That is a good news, because smaller changes should count as the model
+ should be sensitive to meaningful data.
+ (Our assumption here is, that smaller changes are more meaningful than
+ random noisy corruption.)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename wavenet14167/wavenet.h5inp_all_grads_days.png
+	lyxscale 50
+	width 100text%
+
+\end_inset
+
+
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:The-models-sensitivity"
+
+\end_inset
+
+The models sensitivity to inputs in time, by gradients.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Conclusion
+\end_layout
+
+\begin_layout Standard
+The model has discovered a specific repeating trend in the data and did
+ not focus on capturing the amplitude much.
+ The main dependency was the FRED 
+\begin_inset CommandInset href
+LatexCommand href
+name "AAA10Y"
+target "https://fred.stlouisfed.org/series/AAA10Y"
+
+\end_inset
+
+ marker.
+ Practically the model should be used as a tool to predict ups or downs
+ more than the magnitude.
+\end_layout
+
+\begin_layout Standard
+In this technical report, we have not tested the model on the data from
+ the year 2019, which should be done next, to verify if the procedure hadnt
+ optimized on the validation set also and if the periodic trend does continue.
+ 
+\end_layout
+
+\begin_layout Standard
+We should also remember to periodically check the model's basic assumptions
+ like the minmax ranges of values and the percentage of extremal values
+ and retrain if the conditions change.
+\end_layout
+
+\begin_layout Section
+Possible next steps
+\end_layout
+
+\begin_layout Standard
+So far we have tried multiple architectures and datasources.
+ More datasources can be added - from social platforms like twitter or a
+ calendar of holidays or economic events (
+\begin_inset CommandInset href
+LatexCommand href
+name "as here"
+target "https://emnlp2014.org/papers/pdf/EMNLP2014148.pdf"
+
+\end_inset
+
+, 
+\begin_inset CommandInset href
+LatexCommand href
+name "or here"
+target "https://www.aclweb.org/anthology/D19-5105.pdf"
+
+\end_inset
+
+), that could influence the markets behavior.
+ We could also add another target for the prediction in a hope it would
+ work in a synergy with the trade volume and boost the prediction quality.
+ Or use transfer learning from a different target.
+\end_layout
+
+\begin_layout Standard
+What remains is to try either more advanced architectures (GANs) and/or
+ add standart predictors (ARMA, (G)ARCH(X) models) as features into the
+ network (as is described for example 
+\begin_inset CommandInset href
+LatexCommand href
+name "here"
+target "https://towardsdatascience.com/aifortrading-2edd6fac689d"
+
+\end_inset
+
+), or a completely different approach such as predicting changes in a fourier
+ space of a time window.
+\end_layout
+
+\begin_layout Standard
+To create more reliable models, we could incorporate confidence intervals
+ into the prediction (like 
+\begin_inset CommandInset href
+LatexCommand href
+name "here"
+target "https://towardsdatascience.com/how-to-use-machine-learning-to-possibly-become-a-millionaire-predicting-the-stock-market-33861916e9c5"
+
+\end_inset
+
+) using for example gaussian mixtures, ensembling (based on purely different
+ starting point or even crossvalidation based on the timeseries splits)
+ or anomaly predictors (using, for example, autoencoders).
+\end_layout
+
+\end_body
+\end_document

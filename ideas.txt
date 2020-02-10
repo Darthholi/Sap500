@@ -1,0 +1,11 @@
+"""
+adding holidays?
+import holidays
+us_holidays = holidays.US()
+for date, name in sorted(holidays.US(state='CA', years=[2014,2015]).items()):
+  print(date, name)
+countries_use = ["AR","AW","AU","AT","BY","BE","BR","BG","CA","CO","HR","CZ","DK","EE","ECB,TAR","FI","FRA","DE",
+"HU","IS","IND","IE","IT","JP","KE","LT","LU","MX","NL","NZ","None","NO","PE","PL","PT","PTE","RU","SK","SI","ZA",
+"ES","SE","CH","UA","UK","US"]
+x = holidays.CountryHoliday("AR", years=[], prov=None, state=None)
+"""
