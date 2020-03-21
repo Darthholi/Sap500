@@ -10,7 +10,7 @@ import keras.backend as K
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import re
+import requests
 import scipy.stats as st
 import yfinance  # import fix_yahoo_finance formerly
 from gensim.models import KeyedVectors
@@ -88,6 +88,10 @@ def load_reddit_news(embeddings_model,
     Returns numpy array of a shape (len(timeseries_align), ntopbyday, max_words_len, embedding size)
     """
     data_news = pd.read_csv(rednews_csv, delimiter=';')
+
+    data_news['published_date'] = data_news['published'].parallel_apply(
+        lambda text: dt.datetime.strptime(text, "%Y-%m-%d %H:%M:%S").date())
+    
     top_by_day = data_news.sort_values(by=['published_date', 'score'],
                                        ascending=[True, False]).groupby(['published_date']).head(n=ntopbyday)
     
@@ -95,7 +99,7 @@ def load_reddit_news(embeddings_model,
         return np_pad_to_size([vectorize(word, embeddings_model) for word in item[:xlen]], minsizes=(None, xlen, None))
     
     top_by_day['embedded'] = top_by_day['title'].str.split().apply(block_trunc_pad_zeroes)
-    top_by_day['parseddate'] = top_by_day['published_date'].apply(lambda text: dt.datetime.strptime(text, "%Y-%m-%d"))
+    top_by_day['parseddate'] = top_by_day['published_date']
     
     # combine dates based on the info we need: #aggregate by workdays in "data"
     news_up_to_workday = group_by_timeseries(timeseries_align, top_by_day, 'parseddate')
@@ -171,13 +175,24 @@ def proc_fred_marker(trainseries_align, csvname):
     return markers_all.to_numpy()
 
 
-def load_markers(trainseries_align):
+def download_to_file(url, file):
+    r = requests.get(url, allow_redirects=True)
+    open(file, 'wb').write(r.content)
+
+
+def load_markers(trainseries_align, down=True):
     """
     Loads external markers previously downloaded and saved from
     https://www.policyuncertainty.com/media/All_Daily_Policy_Data.csv
     https://www.policyuncertainty.com/media/UK_Daily_Policy_Data.csv
     and FRED & concatenates.
     """
+    if down:
+        download_to_file("https://www.policyuncertainty.com/media/All_Daily_Policy_Data.csv",
+                         "./economic_markers/All_Daily_Policy_Data.csv")
+        download_to_file("https://www.policyuncertainty.com/media/UK_Daily_Policy_Data.csv",
+                         "./economic_markers/UK_Daily_Policy_Data.csv")
+        
     fredpopular = proc_fred_marker(trainseries_align, "./economic_markers/biggerlist_Daily.txt")
     usa = proc_marker(trainseries_align, "./economic_markers/All_Daily_Policy_Data.csv")
     uk = proc_marker(trainseries_align, "./economic_markers/UK_Daily_Policy_Data.csv")
@@ -186,10 +201,11 @@ def load_markers(trainseries_align):
 
 def get_train_valid(data, np_news_all, np_markers_all,
                     predict_quantity,
-                    data_total_start='1999-01-01',
-                    data_total_end='2018-12-31',
-                    train_startdate='2000-01-03',
-                    valid_startdate='2017-01-03',
+                    data_total_start,
+                    data_total_end,
+                    train_startdate,
+                    valid_startdate,
+                    valid_enddate=None,
                     predict_change=True,
                     x_columns=None,
                     discrete_targets=False):
@@ -209,7 +225,13 @@ def get_train_valid(data, np_news_all, np_markers_all,
     valid_start = dates_index.get_loc(valid_startdate)
     # this is the last available date in the data and it will not be included as source, only as a target
     # in other words - forget last datapoint because it has no prediction of next value
-    valid_end = len(dates_index) - 1
+    if valid_enddate is not None:
+        valid_end = dates_index.get_loc(valid_enddate)
+    else:
+        valid_end = len(dates_index) - 1
+        
+    test_start = valid_end + 1
+    test_end = len(dates_index) - 1
     
     if x_columns:
         npdata_x = data_normalized.loc[data_total_start:data_total_end][x_columns].to_numpy()
@@ -229,9 +251,9 @@ def get_train_valid(data, np_news_all, np_markers_all,
         npdata_y[y_orig[:, 0] <= 0.0, 0] = 1.0
         assert np.sum(npdata_y) == npdata_y.shape[0]
         
-        eval_info = y_orig[train_start:valid_end]
+        eval_info = y_orig[train_start:test_end]
     else:
-        eval_info = npdata_y[train_start:valid_end]
+        eval_info = npdata_y[train_start:test_end]
     
     npdata_dates_disc = get_date_infos_discrete(dates_index)
     npdata_dates = get_date_infos(dates_index)
@@ -269,6 +291,28 @@ def get_train_valid(data, np_news_all, np_markers_all,
     val_y_weights = np.zeros((1, val[1].shape[1],))
     val_y_weights[0, (valid_start - train_start):] = 1.0
     val[2] = val_y_weights
+
+    if test_start < test_end:
+        def make_test(arr):
+            return np.expand_dims(arr[train_start:test_end], axis=0)  # makes a 1-batch and selects data for validation
+    
+        test = [
+            {'inp_stock': make_test(npdata_x),
+             'inp_markers': make_test(np_markers_all),
+             'inp_dates': make_test(npdata_dates),
+             'inp_news': make_test(np_news_all),
+             'inp_dates_disc': make_test(npdata_dates_disc),
+             },
+            make_test(npdata_y), None
+        ]
+        # do not evaluate based on data, that are present only for historic lookups
+        test_y_weights = np.zeros((1, test[1].shape[1],))
+        test_y_weights[0, (test_start - train_start):] = 1.0
+        test[2] = test_y_weights
+    else:
+        print("using valid as test set.")
+        test = val
+    
     
     assert all([val[0][arr].shape[0:2] == val[0]['inp_stock'].shape[0:2] for arr in val[0]]), \
         "All training data should have the same batch and time dimensions"
@@ -278,7 +322,7 @@ def get_train_valid(data, np_news_all, np_markers_all,
         "All training data should have the same batch and time dimensions"
     assert train[1].shape[0:2] == train[0]['inp_stock'].shape[0:2], "target data should have the same dimensionality"
     
-    return train, val, eval_info
+    return train, val, test, eval_info
 
 
 def characterize_bin_classification(pred_y, real_y):
@@ -316,18 +360,18 @@ def sse(pred_y, real_y):
     return np.sum(err)
 
 
-def eval_predictions(model, valid, eval_orig_y, discrete_preds,
+def eval_predictions(model, test, eval_orig_y, discrete_preds,
                      model_name
                      ):
     """
     Predicts given model on given sets and analyzes performance.
     """
-    pred_y, real_y = predict_apply_weights(model, valid[0], valid[1][0], valid[2][0])
+    pred_y, real_y = predict_apply_weights(model, test[0], test[1][0], test[2][0])
     
     print(real_y.shape, pred_y.shape)
     
     if discrete_preds:
-        val_y_weights = valid[2][0]
+        val_y_weights = test[2][0]
         r = eval_orig_y[val_y_weights > 0, -1]
         preds_positive = (pred_y[:, -1] > 0.5).astype(int)
         print_binclassification(preds_positive, real_y[:, -1].astype(int))
@@ -856,8 +900,13 @@ def run_experiment(model_name, train, valid, discrete_preds=False,
 
 
 def common_data(discrete_targets=False,
-                data_total_start='1999-01-01',
-                data_total_end='2018-12-31'):
+                    data_total_start='1999-01-01',
+                    data_total_end='2020-03-20',
+                    train_startdate='2000-01-03',
+                    valid_startdate='2017-01-03',
+                    valid_enddate='2019-12-31',
+                    predict_quantity=[('Volume', '^GSPC')],
+                ):
     # load stocks:
     data = pdr.get_data_yahoo(['^DJI', '^IXIC', '^RUT', '^GSPC'], start=data_total_start, end=data_total_end)
     data.columns = data.columns.to_flat_index()
@@ -869,16 +918,16 @@ def common_data(discrete_targets=False,
     
     np_news_all = load_reddit_news(glove_embeddings, data.index)
     
-    train, valid, eval_orig_y = get_train_valid(data, np_news_all, np_markers_all,
+    train, valid, test, eval_orig_y = get_train_valid(data, np_news_all, np_markers_all,
                                                 discrete_targets='sign' if discrete_targets else False,  # pep
-                                                predict_quantity=[('Volume', '^GSPC')],
+                                                predict_quantity=predict_quantity,
                                                 data_total_start=data_total_start,
                                                 data_total_end=data_total_end,
-                                                train_startdate='2000-01-03',
-                                                valid_startdate='2017-01-03',
-                                                # predict_quantity=[('Close', '^GSPC')]
+                                                train_startdate=train_startdate,
+                                                valid_startdate=valid_startdate,
+                                                valid_enddate=valid_enddate,
                                                 )
-    return train, valid, eval_orig_y
+    return train, valid, test, eval_orig_y
 
 
 @click.command()
@@ -897,13 +946,13 @@ def cmd_train(model_name, discrete_targets, start_weights_from, force_rewrite):
     """
     if os.path.exists(model_name) and not force_rewrite:
         raise ValueError("Model already exists!")  # no overwritting
-    train, valid, eval_orig_y = common_data(discrete_targets=discrete_targets)
+    train, valid, test, eval_orig_y = common_data(discrete_targets=discrete_targets)
 
     if not os.path.exists(os.path.dirname(model_name)):
         os.makedirs(os.path.dirname(model_name))
     model = run_experiment(model_name, train, valid, discrete_preds=discrete_targets,
                            start_weights_from=start_weights_from)
-    eval_predictions(model, valid, eval_orig_y, discrete_targets, model_name)
+    eval_predictions(model, test, eval_orig_y, discrete_targets, model_name)
 
 
 @click.command()
@@ -918,13 +967,13 @@ def cmd_eval(model_name, discrete_targets, cache_name):
     """
     Analyses a model, produces and shows all graphs and caches all results.
     """
-    train, valid, eval_orig_y = common_data(discrete_targets=discrete_targets)
+    train, valid, test, eval_orig_y = common_data(discrete_targets=discrete_targets)
     
     model = load_our_model(model_name)
     
-    eval_predictions(model, valid, eval_orig_y, discrete_targets, model_name)
+    eval_predictions(model, test, eval_orig_y, discrete_targets, model_name)
 
-    analyze_model(model, valid, train=train,
+    analyze_model(model, test, train=train,
                   cache_name=cache_name, model_name=model_name)
 
 
