@@ -1,3 +1,7 @@
+#
+# COPYRIGHT 2019 Martin Holecek
+#
+
 import re
 
 import numpy as np

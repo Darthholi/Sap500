@@ -1,3 +1,7 @@
+#
+# COPYRIGHT 2019 Martin Holecek
+#
+
 import datetime as dt
 import numbers
 import os
@@ -905,7 +909,7 @@ def common_data(discrete_targets=False,
                     train_startdate='2000-01-03',
                     valid_startdate='2017-01-03',
                     valid_enddate='2019-12-31',
-                    predict_quantity=[('Volume', '^GSPC')],
+                    predict_quantity=[('Adj Close', '^GSPC')],
                 ):
     # load stocks:
     data = pdr.get_data_yahoo(['^DJI', '^IXIC', '^RUT', '^GSPC'], start=data_total_start, end=data_total_end)
@@ -963,17 +967,24 @@ def cmd_train(model_name, discrete_targets, start_weights_from, force_rewrite):
               help='Set to true for experimenting with discrete targets')
 @click.option('--cache_name', default="/cached/a",
               help='Set to true for experimenting with discrete targets')
-def cmd_eval(model_name, discrete_targets, cache_name):
+@click.option('--set_name', default="test",
+              help='Eval on test/validation set?')
+def cmd_eval(model_name, discrete_targets, cache_name, set_name):
     """
     Analyses a model, produces and shows all graphs and caches all results.
     """
     train, valid, test, eval_orig_y = common_data(discrete_targets=discrete_targets)
     
+    if set_name == 'test':
+        to_eval = test
+    else:
+        to_eval = valid
+    
     model = load_our_model(model_name)
     
-    eval_predictions(model, test, eval_orig_y, discrete_targets, model_name)
+    eval_predictions(model, to_eval, eval_orig_y, discrete_targets, model_name)
 
-    analyze_model(model, test, train=train,
+    analyze_model(model, to_eval, train=train,
                   cache_name=cache_name, model_name=model_name)
 
 
